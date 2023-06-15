@@ -59,6 +59,8 @@ OPTIONS:
 
 ### `HUNTER`结果导出
 
+`-e`导出资产，`-m`设置导出模式
+
 `go run .\main.go info -c "浙江红狮水泥股份有限公司" -m 0 -e`，结果输出再`/report/assetxxx.csv`
 
 ![image-20230615160915739](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230615160915739.png)
@@ -103,8 +105,6 @@ OPTIONS:
 # 注意事项
 
 `-e`会导出在`HUNTER`所能查找到的全部资产，没积分的请谨慎使用。
-
-![image-20230524230432047](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230524230432047.png)
 
 # 打包
 
