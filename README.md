@@ -100,12 +100,6 @@ OPTIONS:
 
 ![image-20230615104300079](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230615104300079.png)
 
-# 结果输出
-
-会输出在`/report/xxx.csv`目录下,导出、子公司查询、扫描都会生成不同标头的`csv`文件
-
-![image-20230602222450658](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230602222450658.png)
-
 # 注意事项
 
 `-e`会导出在`HUNTER`所能查找到的全部资产，没积分的请谨慎使用。
