@@ -102,13 +102,13 @@ OPTIONS:
 
 # 结果输出
 
-不指定-o会默认名为result.csv的文件，每次运行前建议删除result.csv会指定一个新的名字（不然好像会写入失败） `-o xxhw`不用加后缀
+会输出在`/report/xxx.csv`目录下,导出、子公司查询、扫描都会生成不同标头的`csv`文件
 
 ![image-20230602222450658](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230602222450658.png)
 
 # 注意事项
 
-由于hunter api限制，t只能等于*1,10,20,50,100*，其他参数存在报错，考虑到积分问题也不建议大于100导出，所以不增加该实现大量导出的方法（通过控制page翻页可以实现）。
+`-e`会导出在`HUNTER`所能查找到的全部资产，没积分的请谨慎使用。
 
 ![image-20230524230432047](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230524230432047.png)
 
