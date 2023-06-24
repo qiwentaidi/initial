@@ -15,16 +15,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed detection/*
+//go:embed SensitiveDirectory/*
 var sensitivefile embed.FS
 
 // ActiveDetection 主动探测扫描敏感目录
 func ActiveDetection(url string, client *http.Client) (sensitive []string) {
-	yamlFile, _ := fs.ReadDir(sensitivefile, "detection")
+	yamlFile, _ := fs.ReadDir(sensitivefile, "SensitiveDirectory")
 	for _, file := range yamlFile {
 		var matched bool
 		var pr PocRule
-		data, err := fs.ReadFile(sensitivefile, "detection/"+file.Name())
+		data, err := fs.ReadFile(sensitivefile, "SensitiveDirectory/"+file.Name())
 		if err != nil {
 			log.Fatal(err)
 		}

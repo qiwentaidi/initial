@@ -24,18 +24,9 @@ func ParseURL(url, filepath string) (num int, targets []string) {
 	return num, targets
 }
 
-func removeDivision(str string) (newStr string) {
-	if str[len(str)-1:] == "/" {
-		newStr = str[:len(str)-1]
-		return newStr
-	} else {
-		return str
-	}
-}
-
-func ParseICP(ICP, filepath string) (num int, targets []string) {
-	if ICP != "" {
-		targets = append(targets, ICP)
+func ParseFile(target, filepath string) (targets []string) {
+	if target != "" {
+		targets = append(targets, target)
 	} else if filepath != "" {
 		file, err := os.Open(filepath)
 		if err != nil {
@@ -47,6 +38,15 @@ func ParseICP(ICP, filepath string) (num int, targets []string) {
 			targets = append(targets, s.Text())
 		}
 	}
-	num = len(targets)
-	return num, targets
+	return targets
+}
+
+// 去除末尾的/
+func removeDivision(str string) (newStr string) {
+	if str[len(str)-1:] == "/" {
+		newStr = str[:len(str)-1]
+		return newStr
+	} else {
+		return str
+	}
 }

@@ -1,0 +1,14 @@
+name: detect-swaggerui
+requests:
+  - method: GET
+    headers:
+      User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36
+    path:
+      - /swagger-ui.html
+      - /api/swagger-ui.html
+    followredirects: false
+    matchers: status==200 && contains(body,"Swagger UI")
+detail:
+  author: 
+  links:
+    - 

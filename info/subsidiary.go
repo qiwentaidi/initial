@@ -3,6 +3,7 @@ package info
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -11,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -92,7 +92,6 @@ var (
 	id           int
 	company_name string
 	company_id   string
-	cyan         = color.New(color.FgHiCyan)
 )
 
 func companyid(company string) (string, string) {
@@ -180,7 +179,7 @@ func SearchSubsidiary(company string) (fuzzname string, subsidiaries []string) {
 	var qr QccResult
 	json.Unmarshal([]byte(string(b)), &qr)
 	if company != fuzzname {
-		cyan.Printf("[!] %v——天眼查模糊匹配名称为——%v,正在以新名称替换查询目标...\n", company, fuzzname)
+		fmt.Printf("\033[36m[!] %v——天眼查模糊匹配名称为——%v,正在以新名称替换查询目标...\033[37m\n", company, fuzzname)
 		_, domains := Icp2Domain(fuzzname)
 		TargetDomain = append(TargetDomain, domains...)
 		holdData = append(holdData, []string{fuzzname + "(" + company + ")", "母公司", list2string(domains)})

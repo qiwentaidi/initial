@@ -58,10 +58,11 @@ type Config struct {
 }
 
 var (
-	hunterkey string
-	Restquota string
-	Result    *csv.Writer
-	AssetData [][]string
+	hunterkey     string
+	Restquota     string
+	Result        *csv.Writer
+	AssetData     [][]string
+	deduplication string
 )
 
 func init() {
@@ -96,10 +97,15 @@ func init() {
 	}
 }
 
-func SearchTotal(search string) (asset string, num int64) {
+func SearchTotal(search string, vip bool) (asset string, num int64) {
+	if vip {
+		deduplication = "true"
+	} else {
+		deduplication = "false"
+	}
 	current_time := time.Now()
 	before_time := current_time.AddDate(0, -1, 0)
-	addr := "https://hunter.qianxin.com/openApi/search?api-key=" + hunterkey + "&search=" + hunterBaseEncode(search) + "&page=1&page_size=1&is_web=3&port_filter=true&start_time=" + before_time.Format("2006-01-02") + "&end_time=" + current_time.Format("2006-01-02")
+	addr := "https://hunter.qianxin.com/openApi/search?api-key=" + hunterkey + "&search=" + hunterBaseEncode(search) + "&page=1&page_size=1&is_web=3&port_filter=" + deduplication + "&start_time=" + before_time.Format("2006-01-02") + "&end_time=" + current_time.Format("2006-01-02")
 	r, err := http.Get(addr)
 	if err != nil {
 		log.Fatal(err)
@@ -131,7 +137,63 @@ func hunterBaseEncode(str string) string {
 	return s
 }
 
-func Export(search string, total int) {
+func ExportMoudle(moudle int, asset_icp, asset_domain map[string]int64, vip bool) {
+	if vip {
+		deduplication = "true"
+	} else {
+		deduplication = "false"
+	}
+	fmt.Printf("需要导出查询的ICP名称共:	\033[35m%d个\033[37m,需要导出查询的查询的域名共:	\033[35m%d个\033[37m\n", len(asset_icp), len(asset_domain))
+	switch moudle {
+	case 0:
+		fmt.Println("[!]当前导出模式为-仅导出ICP资产")
+	case 1:
+		fmt.Println("[!]当前导出模式为-仅导出域名资产")
+	case 2:
+		fmt.Println("[!]当前导出模式为-导出ICP和域名资产")
+	default:
+		panic("导出模式错误")
+	}
+	switch moudle { // 判断导出模式
+	case 0:
+		if len(asset_icp) > 0 {
+			for icp, total := range asset_icp {
+				if icp != "" {
+					time.Sleep(time.Millisecond * 2000)
+					AssetExport(icp, int(total), deduplication)
+				}
+			}
+		}
+	case 1:
+		if len(asset_domain) > 0 {
+			for domain, total := range asset_domain {
+				if domain != "" {
+					time.Sleep(time.Millisecond * 2000)
+					AssetExport(domain, int(total), deduplication)
+				}
+			}
+		}
+	case 2:
+		if len(asset_icp) > 0 {
+			for icp, total := range asset_icp {
+				if icp != "" {
+					time.Sleep(time.Millisecond * 2000)
+					AssetExport(icp, int(total), deduplication)
+				}
+			}
+		}
+		if len(asset_domain) > 0 {
+			for domain, total := range asset_domain {
+				if domain != "" {
+					time.Sleep(time.Millisecond * 2000)
+					AssetExport(domain, int(total), deduplication)
+				}
+			}
+		}
+	}
+}
+
+func AssetExport(search string, total int, deduplication string) {
 	var addr string
 	file, _ := os.OpenFile(fmt.Sprintf("./report/asset_%v.csv", time.Now().Format("2006-01-02 15_04_05")), os.O_CREATE|os.O_RDWR, os.ModePerm) // 创建结果文件
 	file.WriteString("\xEF\xBB\xBF")
@@ -139,7 +201,7 @@ func Export(search string, total int) {
 	current_time := time.Now()
 	before_time := current_time.AddDate(0, -1, 0)
 	if total <= 100 && total > 0 {
-		addr = "https://hunter.qianxin.com/openApi/search?api-key=" + hunterkey + "&search=" + hunterBaseEncode(search) + "&page=1&page_size=100&is_web=3&port_filter=true&start_time=" + before_time.Format("2006-01-02") + "&end_time=" + current_time.Format("2006-01-02")
+		addr = "https://hunter.qianxin.com/openApi/search?api-key=" + hunterkey + "&search=" + hunterBaseEncode(search) + "&page=1&page_size=100&is_web=3&port_filter=" + deduplication + "&start_time=" + before_time.Format("2006-01-02") + "&end_time=" + current_time.Format("2006-01-02")
 		r, err := http.Get(addr)
 		if err != nil {
 			panic(err)
@@ -184,5 +246,5 @@ func Export(search string, total int) {
 			time.Sleep(time.Millisecond * 2000)
 		}
 	}
-	fmt.Printf("[+] 导出结束,共计扣除积分%v...", total)
+	fmt.Printf("[*] 导出结束,共计扣除积分%v...", total)
 }
