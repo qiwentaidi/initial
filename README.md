@@ -1,14 +1,18 @@
 # 使用说明
 
+该项目已停止更新，功能都包含在https://github.com/qiwentaidi/Slack，需要的师父请移步
+
+
+
 首先运行`go run .\main.go -h`会在当前目录下生成一个`config.json`的文件，在其中配置正确的`hunter-api`即可使用。
 
 ![image-20230524234259910](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230524234259910.png)
 
-`go run main.go -h`，功能主要分布在子命令`info`和`scan`中
+`go run main.go -h`，功能主要分布在子命令`is、ws、bs`中
 
-![image-20230615000840567](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230615000840567.png)
+![image-20230705093418645](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230705093418645.png)
 
-## `info`
+## `is`
 
 ```
 PS E:\Code\Golang\src\hunter_icp> go run .\main.go info -h
@@ -28,29 +32,31 @@ USAGE:
    initial info [command options] [arguments...]
 
 OPTIONS:
-   -c value  需要进行查询的ICP名称
-   -f value  指定需要进行查询ICP名称文件
-   -w        进行一级全资子公司查询和ICP备案名反查域名(会自动纠正ICP名称,但是有误报概率) (default: false)
-   -b value  指定子域名字典文件,开启子域名暴破功能
-   -m value  是否需要导出HUNTER资产文件
+   -c value    需要进行查询的ICP名称
+   -f value    指定需要进行查询ICP名称文件
+   -w          进行一级全资子公司查询和ICP备案名反查域名(会自动纠正ICP名称,但是有误报概率) (default: false)
+   -e          是否导出HUNTER查询到的全部资产 (default: false)
+   --em value  是否需要导出HUNTER资产文件
       0 - 仅导出查询ICP资产
       1 - 仅导出反查到的域名资产
       2 - ICP资产和域名资产都导出(会有重复资产) (default: 0)
-   -e          是否导出HUNTER查询到的全部资产 (default: false)
-   --vip       是否进行资产去重(该功能消耗权益积分) (default: false)
+   --dd        进行资产去重(该功能消耗权益积分) (default: false)
+   --st        查询域名与备案名称在HUNTER中的资产数量 (default: false)
    --help, -h  show help
 ```
 
 | **初衷：** | **为大型活动`hvv`进行信息收集以及资产甄别（快速找出资产多的软柿子）** |
 | ---------- | ------------------------------------------------------------ |
 | **提示：** | **在查询`hunter api`接口时，每次只会查询1条记录，查询一家单位备案仅消耗1积分，1个域名也是1积分，所以可以不必担心浪费大量积分的情况，由于`hunter api`查询速度限制，每次查询延时2秒，开启VIP功能消耗权益积分在查询数量以及导出资产的时候都会沿用。** |
-| **注意：** | **由于`ICP`查域名爬的`https://www.beianx.cn`是个人网站，所以会出现域名反查遗漏的现象。** |
+| **注意：** | **由于`ICP`查域名爬的`https://beian.tianyancha.com/`非工信部网站，所以会出现域名反查遗漏的现象。** |
 
 ### 全资子公司查询+反查域名
 
-`-w`参数开启子公司查询模式，子域名资产信息以及名称纠正功能来自天眼查，如果查偏了，请自行纠正备案名称重新查询。
+`-w`参数开启子公司查询模式，子域名资产信息以及名称纠正功能来自天眼查，如果查偏了，请自行纠正备案名称重新查询`-st`查询`HUNTER`资产数量`-dd`表示开启`HUNTER`去重功能。
 
-![image-20230615000520027](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230615000520027.png)
+![image-20230705093600708](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230705093600708.png)
+
+![image-20230705093710235](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230705093710235.png)
 
 ### 联动子域名暴破
 
@@ -68,7 +74,7 @@ OPTIONS:
 
 ![image-20230615160915739](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230615160915739.png)
 
-## `scan`
+## `ws`
 
 ```
 PS E:\Code\Golang\src\initial> go run .\main.go scan -h
@@ -109,7 +115,7 @@ OPTIONS:
 
 #### 指纹规则
 
-提供4种指纹识别方法，内置9000+ `WEB`指纹，来自棱洞、`goby`、`fscan`等扫描器
+提供4种指纹识别方法，内置9000+ `WEB`指纹
 
 ```
 body：匹配响应体中的内容
@@ -171,7 +177,7 @@ tomcat-manager-page
 
 ![image-20230624211505446](https://qwtd-image.oss-cn-hangzhou.aliyuncs.com/img/image-20230624211505446.png)
 
-## `burst`
+## `bs`
 
 使用示例 ：`go run .\main.go burst -d zjiet.edu.cn -sf .\dic.txt`
 
