@@ -2,7 +2,6 @@ package clients
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -14,52 +13,42 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-type Proxy struct {
-	Enabled  bool
-	Mode     string
-	Address  string
-	Port     int
-	Username string
-	Password string
-}
-
 // 选择代理模式，返回http.client
-func SelectProxy(pr *Proxy, client *http.Client) (*http.Client, error) {
-	if pr.Mode == "HTTP" {
-		urlproxy, _ := url.Parse(fmt.Sprintf("%v://%v:%v", pr.Mode, pr.Address, pr.Port)) //"https://127.0.0.1:9743"
+func SelectProxy(proxys string, client *http.Client) (*http.Client, error) {
+	parsedURL, err := url.Parse(proxys)
+	if err != nil {
+		return nil, err
+	}
+	if parsedURL.Scheme == "http" || parsedURL.Scheme == "https" {
 		client.Transport = &http.Transport{
-			Proxy:               http.ProxyURL(urlproxy),
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // 防止HTTPS报错
-			TLSHandshakeTimeout: time.Second * 3,
+			Proxy:               http.ProxyURL(parsedURL),
+			TLSClientConfig:     TlsConfig, // 防止HTTPS报错
+			TLSHandshakeTimeout: time.Second * 10,
 		}
-	} else {
-		auth := &proxy.Auth{User: pr.Username, Password: pr.Password}
-		dialer, err := proxy.SOCKS5("tcp", fmt.Sprintf("%v:%v", pr.Address, pr.Port), auth, proxy.Direct) //"127.0.0.1:9742"
+	} else if parsedURL.Scheme == "socks5" {
+		auth := &proxy.Auth{User: parsedURL.User.Username(), Password: ""} // 提取用户名
+		if password, ok := parsedURL.User.Password(); ok {
+			auth.Password = password // 提取密码
+		}
+		dialer, err := proxy.SOCKS5("tcp", fmt.Sprintf("%v:%v", parsedURL.Hostname(), parsedURL.Port()), auth, proxy.Direct) //"127.0.0.1:9742"
 		if err != nil {
 			return nil, errors.New("socks address not available")
 		}
-		httpTransport := &http.Transport{
-			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true}, // 防止HTTPS报错
+		client.Transport = &http.Transport{
+			TLSClientConfig:     TlsConfig, // 防止HTTPS报错
 			Dial:                dialer.Dial,
 			TLSHandshakeTimeout: time.Second * 3,
+			// 设置sock5
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				conn, err := dialer.Dial(network, addr)
+				if err != nil {
+					return nil, err
+				}
+				return conn, nil
+			},
 		}
-		client.Transport = httpTransport
-		// 设置sock5
-		httpTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			conn, err := dialer.Dial(network, addr)
-			if err != nil {
-				return nil, err
-			}
-			return conn, nil
-		}
+	} else {
+		return nil, errors.New("unsupported proxy type") // 添加对不支持的代理类型的处理
 	}
 	return client, nil
-}
-
-func JudgeClient(proxy Proxy) *http.Client {
-	client := DefaultClient()
-	if proxy.Enabled {
-		client, _ = SelectProxy(&proxy, client)
-	}
-	return client
 }

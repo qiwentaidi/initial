@@ -1,39 +1,34 @@
 package clients
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"initial/pkg/utils"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
-	"math/rand"
+	"github.com/panjf2000/ants/v2"
+	"github.com/projectdiscovery/gologger"
 )
 
-// type HTTP_OPTIONS struct {
-// 	HTTPS    bool
-// 	Redirect bool
-// 	Proxys   Proxy
-// }
-
-func TestErrorClient() *http.Client {
-	client, _ := SelectProxy(&Proxy{
-		Enabled: true,
-		Mode:    "HTTP",
-		Address: "127.0.0.1",
-		Port:    8080}, DefaultClient())
-	return client
+var TlsConfig = &tls.Config{
+	InsecureSkipVerify: true,             // 防止HTTPS报错
+	MinVersion:         tls.VersionTLS10, // 最低支持TLS 1.0
 }
 
 // 跟随页面跳转最多10次
 func DefaultClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // 防止HTTPS报错
+			TLSClientConfig: TlsConfig,
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
@@ -48,12 +43,28 @@ func DefaultClient() *http.Client {
 func NotFollowClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: TlsConfig,
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+}
+
+func DefaultWithProxyClient(proxys string) *http.Client {
+	client := DefaultClient()
+	if proxys != "" {
+		client, _ = SelectProxy(proxys, client)
+	}
+	return client
+}
+
+func NotFollowWithProxyClient(proxys string) *http.Client {
+	client := NotFollowClient()
+	if proxys != "" {
+		client, _ = SelectProxy(proxys, client)
+	}
+	return client
 }
 
 func NewRequest(method, url string, headers map[string]string, body io.Reader, timeout int, closeRespBody bool, client *http.Client) (*http.Response, []byte, error) {
@@ -64,7 +75,7 @@ func NewRequest(method, url string, headers map[string]string, body io.Reader, t
 	if err != nil {
 		return nil, nil, err
 	}
-	r.Header.Set("User-Agent", RandomUA())
+	r.Header.Set("User-Agent", utils.RandomUA())
 	for key, value := range headers {
 		r.Header.Set(key, value)
 	}
@@ -144,41 +155,69 @@ func CheckProtocol(host string, client *http.Client) (string, error) {
 	return "", fmt.Errorf("host %q is empty", host)
 }
 
-// RandomUA will return a random user agent.
-func RandomUA() string {
-	userAgent := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.114 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36",
-		"Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2919.83 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2866.71 Safari/537.36",
-		"Mozilla/5.0 (X11; Ubuntu; Linux i686 on x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2820.59 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2762.73 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/49.0.2656.18 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML like Gecko) Chrome/44.0.2403.155 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.1 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2227.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2226.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.4; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2225.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2225.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2224.3 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.93 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2062.124 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2049.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 4.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2049.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.67 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.67 Safari/537.36",
-		"Mozilla/5.0 (X11; OpenBSD i386) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1985.125 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/36.0.1944.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.3319.102 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.2309.372 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.2117.157 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 5.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1866.237 Safari/537.36",
-		"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/34.0.1847.137 Safari/4E423F",
+func GetTitle(body []byte) string {
+	if len(body) == 0 {
+		return ""
 	}
-	return userAgent[rand.New(rand.NewSource(time.Now().Unix())).Intn(len(userAgent))]
+	if match := utils.RegTitle.FindSubmatch(body); len(match) > 1 {
+		return strings.TrimSpace(utils.Str2UTF8(string(match[1])))
+	}
+	return ""
+}
+
+func ParseURL(url string, filepath string) []string {
+	var targets []string
+	temps := parseInput(url, filepath)
+	var wg sync.WaitGroup
+	single := make(chan struct{})
+	retChan := make(chan string)
+	go func() {
+		for url := range retChan {
+			targets = append(targets, url)
+		}
+		close(single)
+	}()
+	checkURL := func(url string) {
+		if strings.HasPrefix(url, "http") {
+			retChan <- url
+			return
+		}
+		protocolURL, err := CheckProtocol(url, DefaultClient())
+		if err == nil {
+			retChan <- protocolURL
+		}
+	}
+	threadPool, _ := ants.NewPoolWithFunc(50, func(target interface{}) {
+		t := target.(string)
+		checkURL(t)
+		wg.Done()
+	})
+	defer threadPool.Release()
+	for _, temp := range temps {
+		wg.Add(1)
+		threadPool.Invoke(temp)
+	}
+	wg.Wait()
+	close(retChan)
+	<-single
+	return targets
+}
+
+func parseInput(urls string, filepath string) []string {
+	var targets []string
+	if urls != "" {
+		targets = append(targets, urls)
+	} else if filepath != "" {
+		file, err := os.Open(filepath)
+		if err != nil {
+			gologger.Error().Msgf("Could not open file %s: %v\n", filepath, err)
+			return targets
+		}
+		defer file.Close()
+		s := bufio.NewScanner(file)
+		for s.Scan() {
+			targets = append(targets, s.Text())
+		}
+	}
+	return targets
 }

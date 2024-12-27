@@ -19,20 +19,26 @@ func main() {
 		return
 	}
 	// 整理目标
-	targets := utils.ParseURL(options.Scan.URL, options.Scan.File)
+	gologger.Info().Msg("Start formatting the target")
+	targets := clients.ParseURL(options.URL, options.File)
+	if len(targets) == 0 {
+		return
+	}
+	gologger.Info().Msgf("Completed processing of available targets: %d", len(targets))
 	start := time.Now()
-	s := webscan.NewFingerScanner(targets, clients.Proxy{}, options)
+	s := webscan.NewFingerScanner(targets, options)
 	if s == nil {
 		return
 	}
 	webscan.NewConfig().InitAll("./config/webfinger.yaml", "./config/dir.yaml", "./config/pocs")
-	fmt.Println("[*] Defalt fingerprint scanning started")
+	gologger.Info().Msg("Defalt fingerprint scanning started")
 	s.NewFingerScan()
 	if options.DeepScan {
 		s.NewActiveFingerScan(options.RootPath)
 	}
 	if !options.NoPoc {
-		fmt.Println("\n[*] Performing vulnerability scanning")
+		fmt.Println()
+		gologger.Info().Msg("Init nuclei engine, vulnerability scan is running ...")
 		var id = 0
 		var templates []string
 		fpm := s.URLWithFingerprintMap()
@@ -48,7 +54,8 @@ func main() {
 				Tags:         utils.RemoveDuplicates(tags),
 				TemplateFile: templates,
 				Proxy:        options.Proxy,
-			}, options.Debug)
+				Debug:        options.Debug,
+			})
 		}
 	}
 	fmt.Printf("\n[*] 扫描结束,耗时: %s", time.Since(start))

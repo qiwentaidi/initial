@@ -6,3 +6,5 @@ GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-w -s" -o release/ini
 
 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-w -s" -o release/initial_darwin_amd64 main.go
 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "-w -s" -o release/initial_darwin_arm64 main.go
+
+upx -f release/*

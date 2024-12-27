@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	iconRels          = []string{"icon", "shortcut icon", "apple-touch-icon", "mask-icon"}
-	defaultDnsServers = []string{"223.6.6.6:53", "8.8.8.8:53"}
+	iconDesktopRels = []string{"icon", "shortcut icon"}         // 桌面端 Logo 优先匹配
+	iconMobileRels  = []string{"apple-touch-icon", "mask-icon"} // 移动｜其他端 Logo 其次
 )
 
 type WebInfo struct {
@@ -63,18 +63,20 @@ type InfoResult struct {
 
 type FingerScanner struct {
 	urls                    []*url.URL
-	aliveURLs               []*url.URL // 默认指纹扫描结束后，存活的URL，以便后续主动指纹过滤目标
+	aliveURLs               []*url.URL          // 默认指纹扫描结束后，存活的URL，以便后续主动指纹过滤目标
+	thread                  int                 // 指纹线程
+	deepScan                bool                // 代表主动指纹探测
+	rootPath                bool                // 主动指纹是否采取根路径扫描
+	basicURLWithFingerprint map[string][]string // 后续nuclei需要扫描的目标列表
 	client                  *http.Client
-	thread                  int  // 指纹线程
-	deepScan                bool // 代表主动指纹探测
-	rootPath                bool // 主动指纹是否采取根路径扫描
-	basicURLWithFingerprint map[string][]string
+	notFollowClient         *http.Client
 	mutex                   sync.RWMutex
 }
 
-func NewFingerScanner(target []string, proxy clients.Proxy, o *config.Options) *FingerScanner {
+func NewFingerScanner(target []string, o *config.Options) *FingerScanner {
 	urls := make([]*url.URL, 0, len(target)) // 提前分配容量
 	for _, t := range target {
+		t = strings.TrimRight(t, "/")
 		u, err := url.Parse(t)
 		if err != nil {
 			continue
@@ -85,9 +87,11 @@ func NewFingerScanner(target []string, proxy clients.Proxy, o *config.Options) *
 		gologger.Error().Msg("No available targets found, please check input")
 		return nil
 	}
+
 	return &FingerScanner{
 		urls:                    urls,
-		client:                  clients.JudgeClient(proxy),
+		client:                  clients.DefaultWithProxyClient(o.Proxy),
+		notFollowClient:         clients.NotFollowWithProxyClient(o.Proxy),
 		thread:                  o.Thread,
 		deepScan:                o.DeepScan,
 		rootPath:                o.RootPath,
@@ -103,27 +107,68 @@ func (s *FingerScanner) NewFingerScan() {
 	var id int32
 	go func() {
 		for pr := range retChan {
-			fmt.Printf("\r[Finger] %s [\x1b[32m%d\x1b[37m] [%d] [%s] [%s]\n", pr.URL, pr.StatusCode, pr.Length, pr.Title, color.PrintCyan(strings.Join(pr.Fingerprints, " | ")))
+			fmt.Printf("\r[Finger] %s [\x1b[32m%d\x1b[37m] [%d] [%s] [%s]\n", pr.URL, pr.StatusCode, pr.Length, pr.Title, color.LogColor.Green(strings.Join(pr.Fingerprints, " | ")))
+			atomic.AddInt32(&id, 1)
 			fmt.Printf("\r[%d / %d]", id, count)
 		}
 		close(single)
 	}()
 	// 指纹扫描
 	fscan := func(u *url.URL) {
+		var (
+			rawHeaders   []byte
+			faviconHash  string
+			faviconMd5   string
+			server       string
+			content_type string
+			statusCode   int
+		)
+
+		// 先进行一次不会重定向的扫描，可以获得重定向前页面的响应头中获取指纹
+		resp, _, _ := clients.NewSimpleGetRequest(u.String(), s.notFollowClient)
+		if resp != nil && resp.StatusCode == 302 {
+			rawHeaders = DumpResponseHeadersOnly(resp)
+		}
+
+		// 正常请求指纹
 		resp, body, err := clients.NewSimpleGetRequest(u.String(), s.client)
 		if err != nil || resp == nil {
-			atomic.AddInt32(&id, 1)
+			if len(rawHeaders) > 0 {
+				statusCode = 302
+				goto ContinueExecution
+			}
+			// 如果是正常的无法响应则直接返回
 			retChan <- InfoResult{
 				URL:        u.String(),
 				StatusCode: 0,
 			}
 			return
 		}
-		title, server, content_type := s.GetHeaderInfo(body, resp)
-		headers, _, _ := DumpResponseHeadersAndRaw(resp)
-		hashValue, md5Value := FaviconHash(u, s.client)
+
+		// 合并请求头数据
+		rawHeaders = append(rawHeaders, DumpResponseHeadersOnly(resp)...)
+
+		// 请求Logo
+		faviconHash, faviconMd5 = FaviconHash(u, s.client)
+
+		// 发送shiro探测
+		rawHeaders = append(rawHeaders, []byte(fmt.Sprintf("Set-Cookie: %s", s.ShiroScan(u)))...)
+
+	ContinueExecution:
+		// 跟随JS重定向，并替换成重定向后的数据
+		redirectBody := s.GetJSRedirectResponse(u, string(body))
+		if redirectBody != nil {
+			body = redirectBody
+		}
+		// 网站正常响应
+		title := clients.GetTitle(body)
+		if resp != nil {
+			server = resp.Header.Get("Server")
+			content_type = resp.Header.Get("Content-Type")
+			statusCode = resp.StatusCode
+		}
 		web := &WebInfo{
-			HeadeString:   string(headers),
+			HeadeString:   string(rawHeaders),
 			ContentType:   content_type,
 			Cert:          GetTLSString(u.Scheme, u.Host),
 			BodyString:    string(body),
@@ -132,22 +177,31 @@ func (s *FingerScanner) NewFingerScan() {
 			Server:        server,
 			ContentLength: len(body),
 			Port:          netutil.GetPort(u),
-			IconHash:      hashValue,
-			IconMd5:       md5Value,
-			StatusCode:    resp.StatusCode,
-			Banner:        s.GetBanner(u),
+			IconHash:      faviconHash,
+			IconMd5:       faviconMd5,
+			StatusCode:    statusCode,
 		}
 
-		wafInfo := *waf.IsWAF(u.Hostname(), defaultDnsServers)
+		wafInfo := *waf.ResolveAndWafIdentify(u.Hostname(), waf.DefaultDnsServers)
 
 		s.aliveURLs = append(s.aliveURLs, u)
 
 		fingerprints := s.FingerScan(web, FingerprintDB)
 
+		fingerprints = append(fingerprints, "Generate-Log4j2")
+
+		if s.FastjsonScan(u) {
+			fingerprints = append(fingerprints, "Fastjson")
+		}
+
+		if checkHoneypotWithHeaders(web.HeadeString) || checkHoneypotWithFingerprintLength(len(fingerprints)) {
+			fingerprints = []string{"疑似蜜罐"}
+		}
+
 		s.mutex.Lock()
 		s.basicURLWithFingerprint[u.String()] = append(s.basicURLWithFingerprint[u.String()], fingerprints...)
 		s.mutex.Unlock()
-		atomic.AddInt32(&id, 1)
+
 		retChan <- InfoResult{
 			URL:          u.String(),
 			StatusCode:   web.StatusCode,
@@ -184,7 +238,7 @@ func (s *FingerScanner) NewActiveFingerScan(rootPath bool) {
 		gologger.Warning().Msg("No surviving target found, active fingerprint scanning has been skipped")
 		return
 	}
-	fmt.Println("\n[*] Active fingerprint scanning started")
+	gologger.Warning().Msg("Active fingerprint scanning started")
 
 	var wg sync.WaitGroup
 	count := s.ActiveCounts()
@@ -195,7 +249,7 @@ func (s *FingerScanner) NewActiveFingerScan(rootPath bool) {
 	retChan := make(chan InfoResult, len(s.urls))
 	go func() {
 		for pr := range retChan {
-			fmt.Printf("\r[ActiveFinger] %s [\x1b[32m%d\x1b[37m] [%d] [%s] [%s]\n", pr.URL, pr.StatusCode, pr.Length, pr.Title, color.PrintCyan(strings.Join(pr.Fingerprints, " | ")))
+			fmt.Printf("\r[ActiveFinger] %s [\x1b[32m%d\x1b[37m] [%d] [%s] [%s]\n", pr.URL, pr.StatusCode, pr.Length, pr.Title, color.LogColor.Green(strings.Join(pr.Fingerprints, " | ")))
 		}
 		close(single)
 	}()
@@ -232,7 +286,7 @@ func (s *FingerScanner) NewActiveFingerScan(rootPath bool) {
 			StatusCode:    resp.StatusCode,
 		}
 		result := s.FingerScan(ti, fp.Fpe)
-		if len(result) > 0 {
+		if len(result) > 0 && ti.StatusCode != 404 {
 			s.mutex.Lock()
 			s.basicURLWithFingerprint[fp.URL.String()] = append(s.basicURLWithFingerprint[fp.URL.String()], result...)
 			s.mutex.Unlock()
@@ -282,6 +336,12 @@ func (s *FingerScanner) ActiveCounts() int {
 
 func (s *FingerScanner) URLWithFingerprintMap() map[string][]string {
 	return s.basicURLWithFingerprint
+}
+
+// DumpResponseHeadersOnly 只返回响应头
+func DumpResponseHeadersOnly(resp *http.Response) []byte {
+	headers, _ := httputil.DumpResponse(resp, false)
+	return headers
 }
 
 // DumpResponseHeadersAndRaw returns http headers and response as strings
@@ -414,19 +474,34 @@ func (s *FingerScanner) FingerScan(web *WebInfo, targetDB []FingerPEntity) []str
 // parseIcons 解析HTML文档head中的<link>标签中rel属性包含icon信息的href链接
 func parseIcons(doc *goquery.Document) []string {
 	var icons []string
+	// 桌面端
 	doc.Find("head link").Each(func(i int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if exists {
 			// 匹配ICON链接
-			if rel, exists := s.Attr("rel"); exists && utils.ArrayContains(rel, iconRels) {
+			if rel, exists := s.Attr("rel"); exists && utils.ArrayContains(rel, iconDesktopRels) {
 				icons = append(icons, href)
 			}
 		}
 	})
+	// 移动端
+	if len(icons) == 0 {
+		doc.Find("head link").Each(func(i int, s *goquery.Selection) {
+			href, exists := s.Attr("href")
+			if exists {
+				// 匹配ICON链接
+				if rel, exists := s.Attr("rel"); exists && utils.ArrayContains(rel, iconMobileRels) {
+					icons = append(icons, href)
+				}
+			}
+		})
+	}
+
 	// 找不到自定义icon链接就使用默认的favicon地址
 	if len(icons) == 0 {
 		icons = append(icons, "favicon.ico")
 	}
+
 	return icons
 }
 
@@ -486,4 +561,58 @@ func (s *FingerScanner) GetHeaderInfo(body []byte, resp *http.Response) (title, 
 		}
 	}
 	return
+}
+
+func (s *FingerScanner) GetJSRedirectResponse(u *url.URL, respRaw string) []byte {
+	var nextCheckUrl string
+	newPath := checkJSRedirect(respRaw)
+	// 跳转到ie.html需要忽略，fix in v1.7.5
+	if newPath == "" || newPath == "/html/ie.html" {
+		return nil
+	}
+	newPath = strings.Trim(newPath, " ")
+	newPath = strings.Trim(newPath, "'")
+	newPath = strings.Trim(newPath, "\"")
+	if strings.HasPrefix(newPath, "https://") || strings.HasPrefix(newPath, "http://") {
+		if strings.Contains(newPath, u.Host) {
+			nextCheckUrl = newPath
+		}
+	} else {
+		if len(newPath) > 0 {
+			if newPath[0] == '/' {
+				newPath = newPath[1:]
+			}
+		}
+		nextCheckUrl = getRealPath(u.Scheme+"://"+u.Host) + "/" + newPath
+
+	}
+	_, body, err := clients.NewSimpleGetRequest(nextCheckUrl, s.client)
+	if err != nil {
+		return nil
+	}
+	return body
+}
+
+// 探测shiro并返回响应头中的Set-Cookie值
+func (s *FingerScanner) ShiroScan(u *url.URL) string {
+	shiroHeader := map[string]string{
+		"Cookie": fmt.Sprintf("JSESSIONID=%s;rememberMe=123", utils.RandomStr(16)),
+	}
+	resp, _, err := clients.NewRequest("GET", u.String(), shiroHeader, nil, 10, false, s.client)
+	if err != nil || resp == nil {
+		return ""
+	}
+	return resp.Header.Get("Set-Cookie")
+}
+
+// 探测Fastjson
+func (s *FingerScanner) FastjsonScan(u *url.URL) bool {
+	jsonHeader := map[string]string{
+		"Content-Type": "application/json",
+	}
+	_, body, err := clients.NewRequest("POST", u.String(), jsonHeader, strings.NewReader(`{"@type":"java.lang.AutoCloseable"`), 10, false, s.client)
+	if err != nil || body == nil {
+		return false
+	}
+	return bytes.Contains(body, []byte("fastjson-version"))
 }
