@@ -38,9 +38,7 @@ GLOBAL OPTIONS:
 
 ## Download Config
 
-如果你是Slack的用户请将配置文件中的config文件夹移入当前工具路径下
-
-![image-20240927000156385](assets/image-20240927000156385.png)
+需要将release中的config.zip解压到当前工具路径才能正常使用，后续更新配置文件也是如此
 
 ## Screenshot
 
