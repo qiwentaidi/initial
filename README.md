@@ -2,7 +2,11 @@
 
 <h4 align="center">Slack cli for webscan</h4>
 
-### Usage
+# Features
+
+![image-20250104002708524](assets/image-20250104002708524.png)
+
+# Usage
 
 ````
 initial -h
@@ -36,10 +40,7 @@ GLOBAL OPTIONS:
    --version, -v    print the version
 ```
 
-## Download Config
+# Download Config
 
 需要将release中的config.zip解压到当前工具路径才能正常使用，后续更新配置文件也是如此
 
-## Screenshot
-
-![image-20240926161608683](assets/image-20240926161608683.png)
